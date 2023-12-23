@@ -1,6 +1,7 @@
 package events
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -26,11 +27,15 @@ func (e *TestEvent) GetDateTime() time.Time {
 	return time.Now()
 }
 
+func (e *TestEvent) SetPayload(payload interface{}) {
+	e.Payload = payload
+}
+
 type TestEventHandler struct {
 	ID int
 }
 
-func (h *TestEventHandler) Handle(event EventInterface) {
+func (h *TestEventHandler) Handle(event EventInterface, wg *sync.WaitGroup) {
 }
 
 type EventDispatcherTestSuite struct {
@@ -45,9 +50,15 @@ type EventDispatcherTestSuite struct {
 
 func (suite *EventDispatcherTestSuite) SetupTest() {
 	suite.eventDispatcher = NewEventDispatcher()
-	suite.handler = TestEventHandler{ID: 1}
-	suite.handler2 = TestEventHandler{ID: 2}
-	suite.handler3 = TestEventHandler{ID: 3}
+	suite.handler = TestEventHandler{
+		ID: 1,
+	}
+	suite.handler2 = TestEventHandler{
+		ID: 2,
+	}
+	suite.handler3 = TestEventHandler{
+		ID: 3,
+	}
 	suite.event = TestEvent{Name: "test", Payload: "test"}
 	suite.event2 = TestEvent{Name: "test2", Payload: "test2"}
 }
@@ -133,24 +144,32 @@ func (suite *EventDispatcherTestSuite) TestEventDispatcher_Remove() {
 
 	suite.eventDispatcher.Remove(suite.event2.GetName(), &suite.handler3)
 	suite.Equal(0, len(suite.eventDispatcher.handlers[suite.event2.GetName()]))
-
 }
 
 type MockHandler struct {
 	mock.Mock
 }
 
-func (m *MockHandler) Handle(event EventInterface) {
+func (m *MockHandler) Handle(event EventInterface, wg *sync.WaitGroup) {
 	m.Called(event)
+	wg.Done()
 }
 
-func (suite *EventDispatcherTestSuite) TestEventDispatcher_Dispatch() {
+func (suite *EventDispatcherTestSuite) TestEventDispatch_Dispatch() {
 	eh := &MockHandler{}
 	eh.On("Handle", &suite.event)
+
+	eh2 := &MockHandler{}
+	eh2.On("Handle", &suite.event)
+
 	suite.eventDispatcher.Register(suite.event.GetName(), eh)
+	suite.eventDispatcher.Register(suite.event.GetName(), eh2)
+
 	suite.eventDispatcher.Dispatch(&suite.event)
 	eh.AssertExpectations(suite.T())
+	eh2.AssertExpectations(suite.T())
 	eh.AssertNumberOfCalls(suite.T(), "Handle", 1)
+	eh2.AssertNumberOfCalls(suite.T(), "Handle", 1)
 }
 
 func TestSuite(t *testing.T) {
